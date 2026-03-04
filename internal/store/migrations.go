@@ -175,6 +175,12 @@ func (s *Store) migrate() error {
 				ALTER TABLE failed_files ADD COLUMN dest_path TEXT DEFAULT '';
 			`,
 		},
+		{
+			version: 7,
+			sql: `
+				CREATE INDEX IF NOT EXISTS idx_jobs_status_next_run ON jobs(status, next_run);
+			`,
+		},
 	}
 
 	// Run pending migrations

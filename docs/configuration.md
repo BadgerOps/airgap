@@ -30,6 +30,15 @@ schedule:
 providers: {}
 ```
 
+## Schedule Settings
+
+- `schedule.enabled`: enables the recurring job scheduler while `airgap serve` is running.
+- `schedule.default_cron`: default cron used by `airgap jobs add --cron` when `--cron` is omitted.
+
+Notes:
+- Scheduler execution is serve-only; it does not run from non-server CLI commands.
+- Cron format is standard 5-field (`minute hour day month day-of-week`).
+
 ## Provider Config Storage Model
 
 At runtime, provider configs are read from SQLite (`provider_configs`), not directly from YAML.
@@ -62,7 +71,14 @@ See [configs/airgap.example.yaml](../configs/airgap.example.yaml).
 ## CLI Config Commands
 
 - `airgap config show`: prints effective loaded config
-- `airgap config set KEY VALUE`: currently stubbed (does not persist changes)
+- `airgap config set KEY VALUE`: persists updates to YAML (typed value parsing)
+
+`config set` write target resolution:
+- explicit `--config` path (if provided)
+- discovered config path from file discovery order
+- fallback `./airgap.yaml` when no config file exists
+
+`VALUE` is parsed as YAML, so booleans/numbers/lists/maps are stored as typed values.
 
 ## Global CLI Flags
 

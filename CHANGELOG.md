@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.3.6 - 2026-03-04
+
+### Added
+
+- Recurring job scheduler in `serve` mode (15s poll interval) with SQLite-backed `jobs` execution for `sync` and `validate`.
+- Jobs management surfaces:
+  - CLI: `jobs list|add|pause|resume|run-now|delete`
+  - UI: `/jobs`
+  - API: `/api/jobs` CRUD plus pause/resume/run-now routes.
+- Shared `internal/jobsvc` package for cron parsing/validation, next-run calculation, and reusable job execution logic.
+- Store job APIs for `GetJob`, `DeleteJob`, and `ListDueJobs`, plus index migration `idx_jobs_status_next_run`.
+
+### Changed
+
+- `config set KEY VALUE` now persists typed YAML values to disk and reloads config in-process.
+- Validation jobs now persist invalid files into `failed_files` for follow-up retry/triage workflows.
+- Documentation refreshed for scheduler/job behavior, new routes/commands, and persistent config editing.
+
 ## 0.3.5 - 2026-02-24
 
 ### Changed

@@ -40,6 +40,10 @@ type Server struct {
 	syncMu      sync.Mutex
 	syncCancel  context.CancelFunc
 	syncRunning bool
+
+	// Scheduler lifecycle
+	schedulerCancel context.CancelFunc
+	schedulerWG     sync.WaitGroup
 }
 
 // NewServer creates a new Server instance.
@@ -75,6 +79,11 @@ func (s *Server) Start(listenAddr string) error {
 	// Setup routes
 	mux := s.setupRoutes()
 
+	// Start scheduler loop (serve mode only)
+	if s.config != nil && s.config.Schedule.Enabled {
+		s.startScheduler()
+	}
+
 	// Create and start HTTP server
 	s.httpServer = &http.Server{
 		Addr:              listenAddr,
@@ -95,6 +104,8 @@ func (s *Server) Start(listenAddr string) error {
 
 // Shutdown gracefully shuts down the HTTP server.
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.stopScheduler()
+
 	if s.httpServer == nil {
 		return nil
 	}
@@ -115,6 +126,7 @@ func (s *Server) parseTemplates() error {
 		"templates/provider_detail.html",
 		"templates/transfer.html",
 		"templates/ocp_clients.html",
+		"templates/jobs.html",
 	}
 
 	for _, page := range pages {
@@ -155,6 +167,7 @@ func (s *Server) setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /providers/{name}", s.handleProviderDetail)
 	mux.HandleFunc("GET /providers", s.handleProviders)
 	mux.HandleFunc("GET /sync", s.handleSync)
+	mux.HandleFunc("GET /jobs", s.handleJobs)
 
 	// API routes
 	mux.HandleFunc("GET /api/status", s.handleAPIStatus)
@@ -170,6 +183,13 @@ func (s *Server) setupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /api/sync/failures/resolve", s.handleAPISyncFailuresResolve)
 	mux.HandleFunc("POST /api/sync/retry", s.handleAPISyncRetry)
 	mux.HandleFunc("POST /api/registry/push", s.handleAPIRegistryPush)
+	mux.HandleFunc("GET /api/jobs", s.handleAPIJobsList)
+	mux.HandleFunc("POST /api/jobs", s.handleAPIJobsCreate)
+	mux.HandleFunc("PUT /api/jobs/{id}", s.handleAPIJobsUpdate)
+	mux.HandleFunc("DELETE /api/jobs/{id}", s.handleAPIJobsDelete)
+	mux.HandleFunc("POST /api/jobs/{id}/pause", s.handleAPIJobsPause)
+	mux.HandleFunc("POST /api/jobs/{id}/resume", s.handleAPIJobsResume)
+	mux.HandleFunc("POST /api/jobs/{id}/run", s.handleAPIJobsRunNow)
 
 	// Provider config CRUD routes
 	mux.HandleFunc("GET /api/providers/config", s.handleListProviderConfigs)

@@ -70,6 +70,8 @@ Top-level sections:
 
 For full details, see [docs/configuration.md](docs/configuration.md).
 
+When `schedule.enabled` is `true`, recurring jobs are executed by the scheduler while `airgap serve` is running.
+
 ## Provider Types
 
 Provider configs are stored in SQLite (`provider_configs`). YAML provider entries are used for first-run seeding when the table is empty.
@@ -95,8 +97,9 @@ Supported as config/target types:
 - `serve`: web UI + API server
 - `providers list`: list provider configs from SQLite
 - `registry push`: push mirrored container images to a registry target
+- `jobs list|add|pause|resume|run-now|delete`: manage scheduled sync/validate jobs
 - `config show`: print loaded config
-- `config set`: currently a stub (prints intended change; does not persist)
+- `config set`: persist a typed config value to YAML (`KEY` dot-path + YAML `VALUE`)
 
 ## Web UI and API
 
@@ -106,6 +109,7 @@ Main pages:
 - `/providers/{name}`
 - `/transfer`
 - `/ocp/clients`
+- `/jobs`
 
 API routes are documented in [docs/http-api.md](docs/http-api.md).
 

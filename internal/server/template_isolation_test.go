@@ -39,6 +39,11 @@ func TestTemplateIsolationEndToEnd(t *testing.T) {
 			mustContain:    "providerManager",
 			mustNotContain: "Start Export",
 		},
+		{
+			path:           "/jobs",
+			mustContain:    "Create Job",
+			mustNotContain: "Start Export",
+		},
 	}
 
 	for _, tt := range tests {

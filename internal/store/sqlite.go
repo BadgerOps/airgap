@@ -3,8 +3,10 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -575,6 +577,96 @@ func (s *Store) ListJobs(status string, limit int) ([]Job, error) {
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating jobs: %w", err)
+	}
+
+	return jobs, nil
+}
+
+// GetJob retrieves a single Job by ID.
+func (s *Store) GetJob(id int64) (*Job, error) {
+	const query = `
+		SELECT id, type, provider, cron_expr, status, last_run, next_run, created_at, updated_at
+		FROM jobs
+		WHERE id = ?
+	`
+
+	job := &Job{}
+	err := s.db.QueryRow(query, id).Scan(
+		&job.ID, &job.Type, &job.Provider, &job.CronExpr, &job.Status,
+		&job.LastRun, &job.NextRun, &job.CreatedAt, &job.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("job not found: %d", id)
+		}
+		return nil, fmt.Errorf("failed to query job: %w", err)
+	}
+
+	return job, nil
+}
+
+// DeleteJob deletes a Job by ID.
+func (s *Store) DeleteJob(id int64) error {
+	const query = `DELETE FROM jobs WHERE id = ?`
+
+	result, err := s.db.Exec(query, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete job: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("job not found: %d", id)
+	}
+
+	return nil
+}
+
+// ListDueJobs retrieves jobs that are due for execution.
+// It excludes paused and running jobs.
+func (s *Store) ListDueJobs(now time.Time, limit int) ([]Job, error) {
+	query := `
+		SELECT id, type, provider, cron_expr, status, last_run, next_run, created_at, updated_at
+		FROM jobs
+		WHERE status IN ('scheduled', 'completed', 'failed')
+		  AND next_run IS NOT NULL
+		  AND next_run <= ?
+		ORDER BY next_run ASC, id ASC
+	`
+	args := []interface{}{now}
+
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query due jobs: %w", err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	var jobs []Job
+	for rows.Next() {
+		job := Job{}
+		err := rows.Scan(
+			&job.ID, &job.Type, &job.Provider, &job.CronExpr, &job.Status,
+			&job.LastRun, &job.NextRun, &job.CreatedAt, &job.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan due job: %w", err)
+		}
+		jobs = append(jobs, job)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating due jobs: %w", err)
 	}
 
 	return jobs, nil

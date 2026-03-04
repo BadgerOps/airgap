@@ -10,6 +10,7 @@
 Core packages:
 - `cmd/airgap`: CLI command wiring
 - `internal/engine`: sync/export/import orchestration
+- `internal/jobsvc`: cron parsing and shared job execution logic
 - `internal/provider/*`: provider implementations
 - `internal/store`: SQLite models, migrations, CRUD
 - `internal/server`: web UI and API handlers
@@ -23,6 +24,7 @@ Core packages:
 4. Load provider configs from DB.
 5. Instantiate enabled providers and register them.
 6. Start CLI command execution (or HTTP server for `serve`).
+7. In `serve` mode, start scheduler loop if `schedule.enabled=true`.
 
 ## Sync Flow
 
@@ -35,6 +37,15 @@ Core packages:
 Notes:
 - Sync/push operations are serialized at server level (`syncRunning` guard).
 - Progress is tracked through an in-memory `SyncTracker` used by UI polling/SSE paths.
+
+## Job Scheduler Flow
+
+1. Server loop polls due jobs every 15 seconds from `jobs`.
+2. Due jobs are selected by `next_run <= now` and non-paused/non-running status.
+3. Scheduler acquires the same operation lock used by sync/push/validate API actions.
+4. Job is marked `running`, then executed via `internal/jobsvc`.
+5. Job transitions to `completed` or `failed`, updates `last_run`, and advances `next_run`.
+6. Paused jobs never auto-run; run-now can execute them once and keep paused state.
 
 ## Transfer Flow
 
@@ -72,6 +83,7 @@ SQLite tables include:
 - `sync_runs`
 - `file_records`
 - `failed_files`
+- `jobs`
 - `transfers`
 - `transfer_archives`
 - `provider_configs`
@@ -81,8 +93,9 @@ Migrations are managed in `internal/store/migrations.go`.
 ## HTTP Surface
 
 Server routes include:
-- UI pages (`/dashboard`, `/providers`, `/transfer`, `/ocp/clients`)
+- UI pages (`/dashboard`, `/providers`, `/jobs`, `/transfer`, `/ocp/clients`)
 - Sync/status/provider APIs
+- Job CRUD and run-control APIs
 - Provider config CRUD APIs
 - Transfer APIs
 - Mirror discovery/speed-test APIs

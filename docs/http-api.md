@@ -9,6 +9,7 @@ Routes are defined in `internal/server/server.go`.
 - `GET /providers`
 - `GET /providers/{name}`
 - `GET /sync`
+- `GET /jobs`
 - `GET /transfer`
 - `GET /ocp/clients`
 - `GET /static/*` (embedded static assets)
@@ -30,6 +31,16 @@ Routes are defined in `internal/server/server.go`.
 - `DELETE /api/sync/failures/{id}` - resolve one failed file
 - `POST /api/sync/failures/resolve` - bulk resolve failures
 - `POST /api/sync/retry` - retry failed downloads
+
+## Jobs API
+
+- `GET /api/jobs` - list scheduled jobs
+- `POST /api/jobs` - create a job (`type`, `provider`, `cron_expr`)
+- `PUT /api/jobs/{id}` - update a job
+- `DELETE /api/jobs/{id}` - delete a job
+- `POST /api/jobs/{id}/pause` - pause job execution
+- `POST /api/jobs/{id}/resume` - resume paused job
+- `POST /api/jobs/{id}/run` - run a job immediately
 
 ## Provider Config Management
 
@@ -67,3 +78,4 @@ Routes are defined in `internal/server/server.go`.
 
 - Several endpoints support HTMX form requests in addition to JSON.
 - Long-running sync/push operations are asynchronous and update shared progress state.
+- Job scheduler runs in `serve` mode when `schedule.enabled=true`; scheduler poll interval is 15 seconds.

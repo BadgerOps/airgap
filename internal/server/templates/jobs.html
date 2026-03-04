@@ -1,0 +1,218 @@
+{{define "content"}}
+<div x-data="jobsManager()" x-init="init()">
+	<div x-show="message" x-transition :class="'alert alert-' + messageType" x-text="message" style="margin-bottom: 20px;"></div>
+
+	<div class="card">
+		<h2>Create Job</h2>
+		<p class="card-desc">Schedule recurring sync or validation jobs.</p>
+
+		<form @submit.prevent="createJob()">
+			<div class="form-row">
+				<div class="form-group">
+					<label>Type</label>
+					<select x-model="form.type" required>
+						<option value="sync">sync</option>
+						<option value="validate">validate</option>
+					</select>
+				</div>
+				<div class="form-group">
+					<label>Provider</label>
+					<select x-model="form.provider" required>
+						<option value="all">all</option>
+						{{range .Providers}}
+						<option value="{{.}}">{{.}}</option>
+						{{end}}
+					</select>
+				</div>
+				<div class="form-group">
+					<label>Cron Expression</label>
+					<input type="text" x-model="form.cron_expr" placeholder="*/30 * * * *" required>
+				</div>
+			</div>
+			<div class="btn-group">
+				<button type="submit" class="btn btn-primary" :disabled="busy">
+					<span x-show="!busy">Create Job</span>
+					<span x-show="busy">Creating...</span>
+				</button>
+			</div>
+		</form>
+	</div>
+
+	<div class="card">
+		<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+			<div>
+				<h2>Jobs</h2>
+				<p class="card-desc" style="margin-bottom: 0;">Auto-refreshes every 10 seconds.</p>
+			</div>
+			<button class="btn btn-sm" @click="loadJobs()" :disabled="loading">Refresh</button>
+		</div>
+
+		<div x-show="jobs.length === 0" class="card-desc">No jobs configured.</div>
+
+		<div x-show="jobs.length > 0" style="overflow-x: auto;">
+			<table>
+				<thead>
+					<tr>
+						<th>ID</th>
+						<th>Type</th>
+						<th>Provider</th>
+						<th>Cron</th>
+						<th>Status</th>
+						<th>Last Run</th>
+						<th>Next Run</th>
+						<th>Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					<template x-for="job in jobs" :key="job.id">
+						<tr>
+							<td x-text="job.id"></td>
+							<td><span class="badge" x-text="job.type"></span></td>
+							<td style="font-family: var(--font-mono);" x-text="job.provider"></td>
+							<td style="font-family: var(--font-mono);" x-text="job.cron_expr"></td>
+							<td><span class="badge" :class="statusBadge(job.status)" x-text="job.status"></span></td>
+							<td style="font-family: var(--font-mono);" x-text="formatDate(job.last_run)"></td>
+							<td style="font-family: var(--font-mono);" x-text="formatDate(job.next_run)"></td>
+							<td>
+								<div class="btn-group">
+									<button class="btn btn-sm" @click="runNow(job)" :disabled="job.status === 'running'">Run</button>
+									<button class="btn btn-sm" x-show="job.status !== 'paused'" @click="pauseJob(job)" :disabled="job.status === 'running'">Pause</button>
+									<button class="btn btn-sm" x-show="job.status === 'paused'" @click="resumeJob(job)">Resume</button>
+									<button class="btn btn-sm btn-danger" @click="deleteJob(job)" :disabled="job.status === 'running'">Delete</button>
+								</div>
+							</td>
+						</tr>
+					</template>
+				</tbody>
+			</table>
+		</div>
+	</div>
+</div>
+
+<script>
+	function jobsManager() {
+		return {
+			jobs: [],
+			loading: false,
+			busy: false,
+			message: '',
+			messageType: 'info',
+			refreshTimer: null,
+			form: {
+				type: 'sync',
+				provider: 'all',
+				cron_expr: '{{.DefaultCron}}' || '0 2 * * 0'
+			},
+			init() {
+				this.loadJobs();
+				this.refreshTimer = setInterval(() => this.loadJobs(), 10000);
+				window.addEventListener('beforeunload', () => {
+					if (this.refreshTimer) clearInterval(this.refreshTimer);
+				});
+			},
+			statusBadge(status) {
+				if (status === 'completed') return 'badge-success';
+				if (status === 'failed') return 'badge-error';
+				if (status === 'paused') return 'badge-warning';
+				if (status === 'running') return 'badge-info';
+				return '';
+			},
+			formatDate(value) {
+				if (!value || value.startsWith('0001-01-01')) return '-';
+				const d = new Date(value);
+				if (Number.isNaN(d.getTime())) return '-';
+				return d.toLocaleString();
+			},
+			showMessage(type, text) {
+				this.messageType = type;
+				this.message = text;
+				setTimeout(() => {
+					this.message = '';
+				}, 4000);
+			},
+			async loadJobs() {
+				this.loading = true;
+				try {
+					const resp = await fetch('/api/jobs');
+					if (!resp.ok) throw new Error('failed to load jobs');
+					this.jobs = await resp.json();
+				} catch (err) {
+					this.showMessage('error', err.message || 'Failed to load jobs');
+				} finally {
+					this.loading = false;
+				}
+			},
+			async createJob() {
+				this.busy = true;
+				try {
+					const resp = await fetch('/api/jobs', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(this.form),
+					});
+					if (!resp.ok) {
+						const data = await resp.json().catch(() => ({}));
+						throw new Error(data.error || 'Failed to create job');
+					}
+					this.showMessage('success', 'Job created');
+					await this.loadJobs();
+				} catch (err) {
+					this.showMessage('error', err.message || 'Failed to create job');
+				} finally {
+					this.busy = false;
+				}
+			},
+			async runNow(job) {
+				try {
+					const resp = await fetch(`/api/jobs/${job.id}/run`, { method: 'POST' });
+					if (!resp.ok) {
+						const data = await resp.json().catch(() => ({}));
+						throw new Error(data.error || 'Failed to run job');
+					}
+					this.showMessage('success', `Started job ${job.id}`);
+					await this.loadJobs();
+				} catch (err) {
+					this.showMessage('error', err.message || 'Failed to run job');
+				}
+			},
+			async pauseJob(job) {
+				try {
+					const resp = await fetch(`/api/jobs/${job.id}/pause`, { method: 'POST' });
+					if (!resp.ok) {
+						const data = await resp.json().catch(() => ({}));
+						throw new Error(data.error || 'Failed to pause job');
+					}
+					await this.loadJobs();
+				} catch (err) {
+					this.showMessage('error', err.message || 'Failed to pause job');
+				}
+			},
+			async resumeJob(job) {
+				try {
+					const resp = await fetch(`/api/jobs/${job.id}/resume`, { method: 'POST' });
+					if (!resp.ok) {
+						const data = await resp.json().catch(() => ({}));
+						throw new Error(data.error || 'Failed to resume job');
+					}
+					await this.loadJobs();
+				} catch (err) {
+					this.showMessage('error', err.message || 'Failed to resume job');
+				}
+			},
+			async deleteJob(job) {
+				if (!confirm(`Delete job ${job.id}?`)) return;
+				try {
+					const resp = await fetch(`/api/jobs/${job.id}`, { method: 'DELETE' });
+					if (!resp.ok) {
+						const data = await resp.json().catch(() => ({}));
+						throw new Error(data.error || 'Failed to delete job');
+					}
+					await this.loadJobs();
+				} catch (err) {
+					this.showMessage('error', err.message || 'Failed to delete job');
+				}
+			}
+		};
+	}
+</script>
+{{end}}

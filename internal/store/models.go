@@ -32,10 +32,10 @@ type FileRecord struct {
 // Job represents a scheduled or completed job
 type Job struct {
 	ID        int64
-	Type      string // "sync", "validate", "export", "import"
-	Provider  string // empty for "all providers" jobs
+	Type      string // "sync", "validate"
+	Provider  string // empty means "all providers"
 	CronExpr  string // for scheduled jobs
-	Status    string // "scheduled", "running", "completed", "failed"
+	Status    string // "scheduled", "paused", "running", "completed", "failed"
 	LastRun   time.Time
 	NextRun   time.Time
 	CreatedAt time.Time

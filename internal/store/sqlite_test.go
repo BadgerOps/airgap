@@ -1260,6 +1260,145 @@ func TestListJobsWithLimit(t *testing.T) {
 	}
 }
 
+func TestGetJob(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Now()
+
+	job := &Job{
+		Type:      "sync",
+		Provider:  "provider-a",
+		CronExpr:  "*/15 * * * *",
+		Status:    "scheduled",
+		LastRun:   now.Add(-time.Hour),
+		NextRun:   now.Add(time.Hour),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := store.CreateJob(job); err != nil {
+		t.Fatalf("CreateJob() failed: %v", err)
+	}
+
+	got, err := store.GetJob(job.ID)
+	if err != nil {
+		t.Fatalf("GetJob() failed: %v", err)
+	}
+	if got.ID != job.ID {
+		t.Fatalf("ID mismatch: got %d want %d", got.ID, job.ID)
+	}
+	if got.Type != job.Type || got.Provider != job.Provider || got.CronExpr != job.CronExpr {
+		t.Fatalf("job mismatch: got %+v want %+v", got, job)
+	}
+}
+
+func TestGetJobNotFound(t *testing.T) {
+	store := newTestStore(t)
+	if _, err := store.GetJob(123456); err == nil {
+		t.Fatal("expected error for missing job")
+	}
+}
+
+func TestDeleteJob(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Now()
+
+	job := &Job{
+		Type:      "validate",
+		Status:    "scheduled",
+		CronExpr:  "0 2 * * 0",
+		NextRun:   now.Add(time.Hour),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := store.CreateJob(job); err != nil {
+		t.Fatalf("CreateJob() failed: %v", err)
+	}
+
+	if err := store.DeleteJob(job.ID); err != nil {
+		t.Fatalf("DeleteJob() failed: %v", err)
+	}
+	if _, err := store.GetJob(job.ID); err == nil {
+		t.Fatal("expected deleted job to be missing")
+	}
+}
+
+func TestDeleteJobNotFound(t *testing.T) {
+	store := newTestStore(t)
+	if err := store.DeleteJob(999999); err == nil {
+		t.Fatal("expected error for missing job")
+	}
+}
+
+func TestListDueJobs(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Now()
+
+	cases := []Job{
+		{
+			Type:      "sync",
+			Status:    "scheduled",
+			CronExpr:  "*/5 * * * *",
+			NextRun:   now.Add(-2 * time.Minute),
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		{
+			Type:      "validate",
+			Status:    "completed",
+			CronExpr:  "0 * * * *",
+			NextRun:   now.Add(-1 * time.Minute),
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		{
+			Type:      "sync",
+			Status:    "paused",
+			CronExpr:  "* * * * *",
+			NextRun:   now.Add(-5 * time.Minute),
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		{
+			Type:      "sync",
+			Status:    "running",
+			CronExpr:  "* * * * *",
+			NextRun:   now.Add(-5 * time.Minute),
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		{
+			Type:      "sync",
+			Status:    "failed",
+			CronExpr:  "*/10 * * * *",
+			NextRun:   now.Add(time.Minute),
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+	}
+
+	for i := range cases {
+		j := cases[i]
+		if err := store.CreateJob(&j); err != nil {
+			t.Fatalf("CreateJob(%d) failed: %v", i, err)
+		}
+	}
+
+	due, err := store.ListDueJobs(now, 0)
+	if err != nil {
+		t.Fatalf("ListDueJobs() failed: %v", err)
+	}
+	if len(due) != 2 {
+		t.Fatalf("expected 2 due jobs, got %d", len(due))
+	}
+	if due[0].NextRun.After(due[1].NextRun) {
+		t.Fatal("due jobs not ordered by next_run ASC")
+	}
+	for _, job := range due {
+		if job.Status == "paused" || job.Status == "running" {
+			t.Fatalf("unexpected due job status: %s", job.Status)
+		}
+	}
+}
+
 // ============================================================================
 // Transfer Operations Tests
 // ============================================================================

@@ -73,16 +73,26 @@ func TestSpeedTestWithErrors(t *testing.T) {
 	}))
 	defer good.Close()
 
-	// One unreachable URL (RFC 5737 TEST-NET, guaranteed unreachable)
-	badURL := "http://192.0.2.1:1"
+	// One server that immediately resets the connection (deterministic failure).
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Hijack the connection and close it to cause an error.
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "hijack not supported", http.StatusInternalServerError)
+			return
+		}
+		conn, _, err := hj.Hijack()
+		if err != nil {
+			return
+		}
+		conn.Close()
+	}))
+	defer bad.Close()
 
 	d := NewDiscovery(slog.Default())
-	urls := []string{good.URL, badURL}
+	urls := []string{good.URL, bad.URL}
 
-	// Use a client with a short timeout so the unreachable URL fails quickly.
-	d.client.Timeout = 2 * time.Second
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	results := d.SpeedTest(ctx, urls, 2)

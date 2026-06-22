@@ -77,3 +77,4 @@ coverage.html
 
 # Ad-hoc test scripts
 test.sh
+.clawpatch/
